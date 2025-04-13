@@ -63,6 +63,7 @@ project/
 ├── main.c
 ├── view.c          # GTK interface implementation
 ├── view.h
+├── .gitignore       # Specifies files/folders Git should ignore
 ├── Makefile        # Compilation script
 ├── README.md       # Project documentation
 └── Rapor.pdf      # Project report with design details

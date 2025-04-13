@@ -56,10 +56,6 @@ Shells are implemented using **GTK** for the GUI, and they are capable of both e
 
 . ├── model.c # Backend logic and shared memory ├── view.c # GTK-based interface ├── controller.c # Input parsing and glue logic ├── Makefile ├── README.md └── report.pdf # Detailed design and challenge discussion
 
-markdown
-Kopyala
-Düzenle
-
 ---
 
 ## 🛠️ Installation & Usage

@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <semaphore.h>
+#include <time.h>
 
 // Constants
 #define MAX_CMD_LEN 256
@@ -36,6 +37,8 @@ void add_job(pid_t pid, const char *command);
 void execute_command(char *command);
 void module_send_message(const char *msg);
 void module_read_messages(char *buffer);
+
+int handle_redirections(char *args[], int *input_fd, int *output_fd);
 
 extern struct job jobs[MAX_JOBS];
 extern int job_count;

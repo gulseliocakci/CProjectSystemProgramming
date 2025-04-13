@@ -26,7 +26,9 @@ void create_gui() {
     // Create notebook for terminal tabs
     notebook = gtk_notebook_new();
     gtk_notebook_set_scrollable(GTK_NOTEBOOK(notebook), TRUE);
-    
+ 
+    g_signal_connect(notebook, "switch-page", G_CALLBACK(on_tab_switched), NULL);
+   
     // Create "+" button for adding new tabs
     GtkWidget *add_button = gtk_button_new_with_label("+");
     gtk_widget_set_size_request(add_button, 20, 20);
@@ -83,10 +85,23 @@ void create_gui() {
     
     // Show all widgets
     gtk_widget_show_all(window);
+
 }
 
 void add_terminal_tab(GtkWidget *button, gpointer user_data) {
-    // Create a new tab with terminal view
+    // Yeni terminal tab yapısı oluştur
+    TerminalTab *tab = g_malloc(sizeof(TerminalTab));
+
+    tab->message_history = g_string_new("");
+    
+    // Pipe'ları oluştur
+    if (pipe(tab->stdin_pipe) != 0 || pipe(tab->stdout_pipe) != 0 || pipe(tab->stderr_pipe) != 0) {
+        perror("pipe");
+        g_free(tab);
+        return;
+    }
+    
+    // UI elemanlarını oluştur
     GtkWidget *tab_label = gtk_label_new("Shell");
     GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -96,7 +111,7 @@ void add_terminal_tab(GtkWidget *button, gpointer user_data) {
     gtk_text_view_set_editable(GTK_TEXT_VIEW(term), FALSE);
     gtk_widget_set_can_focus(term, FALSE);
     
-    // Set monospace font using CSS (modern approach)
+    // Monospace font
     GtkCssProvider *provider = gtk_css_provider_new();
     gtk_css_provider_load_from_data(provider,
         "textview { font-family: monospace; font-size: 10pt; }", -1, NULL);
@@ -105,47 +120,151 @@ void add_terminal_tab(GtkWidget *button, gpointer user_data) {
         GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(provider);
     
-    // Pack widgets
+    // Yapıyı doldur
+    tab->term_view = term;
+    tab->term_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(term));
+    
+    // Auto-scroll için mark oluştur
+    GtkTextIter iter;
+    gtk_text_buffer_get_end_iter(tab->term_buffer, &iter);
+    tab->term_mark = gtk_text_buffer_create_mark(tab->term_buffer, NULL, &iter, FALSE);
+    
+    // Widget'ları paketleme
     gtk_container_add(GTK_CONTAINER(scroll), term);
     gtk_box_pack_start(GTK_BOX(vbox), scroll, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(vbox), entry, FALSE, FALSE, 0);
     
-    // Add to notebook
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), vbox, tab_label);
+    // Notebook'a ekle
+    int page_num = gtk_notebook_append_page(GTK_NOTEBOOK(notebook), vbox, tab_label);
     
-    // Connect signals
-    g_signal_connect(entry, "activate", G_CALLBACK(on_command_entered), NULL);
+    // Veri yapısını sayfa verisine bağla
+    g_object_set_data(G_OBJECT(vbox), "tab-data", tab);
     
-    // Show all widgets
+    // Yeni shell süreci oluştur
+    tab->shell_pid = fork();
+    
+    if (tab->shell_pid == 0) {
+        // Çocuk süreç
+        
+        // Stdin, stdout ve stderr'i yönlendir
+        close(tab->stdin_pipe[1]);   // Yazma ucunu kapat
+        close(tab->stdout_pipe[0]);  // Okuma ucunu kapat 
+        close(tab->stderr_pipe[0]);  // Okuma ucunu kapat
+        
+        dup2(tab->stdin_pipe[0], STDIN_FILENO);
+        dup2(tab->stdout_pipe[1], STDOUT_FILENO);
+        dup2(tab->stderr_pipe[1], STDERR_FILENO);
+        
+        // Artık kopyalandığı için orijinalleri kapat
+        close(tab->stdin_pipe[0]);
+        close(tab->stdout_pipe[1]);
+        close(tab->stderr_pipe[1]);
+        
+        // Shell'i çalıştır
+        execl("/bin/sh", "sh", NULL);
+        perror("execl");
+        exit(1);
+    } else if (tab->shell_pid > 0) {
+        // Ana süreç
+        
+        // Kullanılmayan pipe uçlarını kapat
+        close(tab->stdin_pipe[0]);  // Okuma ucunu kapat
+        close(tab->stdout_pipe[1]); // Yazma ucunu kapat
+        close(tab->stderr_pipe[1]); // Yazma ucunu kapat
+        
+        // GIOChannel'ları ayarla
+        tab->stdout_channel = g_io_channel_unix_new(tab->stdout_pipe[0]);
+        g_io_channel_set_flags(tab->stdout_channel, G_IO_FLAG_NONBLOCK, NULL);
+        g_io_channel_set_encoding(tab->stdout_channel, NULL, NULL);
+        
+        tab->stderr_channel = g_io_channel_unix_new(tab->stderr_pipe[0]);
+        g_io_channel_set_flags(tab->stderr_channel, G_IO_FLAG_NONBLOCK, NULL);
+        g_io_channel_set_encoding(tab->stderr_channel, NULL, NULL);
+        
+        // Okuma izleyicileri (watch) ekle
+        g_io_add_watch(tab->stdout_channel, G_IO_IN | G_IO_HUP, 
+                      read_terminal_output, tab);
+        g_io_add_watch(tab->stderr_channel, G_IO_IN | G_IO_HUP, 
+                      read_terminal_output, tab);
+        
+        // Giriş sinyalini bağla
+        g_signal_connect(entry, "activate", G_CALLBACK(on_command_entered), tab);
+        
+        // Hoşgeldin mesajı
+        gtk_text_buffer_set_text(tab->term_buffer, 
+                               "*** Yeni Shell Başlatıldı ***\n", -1);
+    } else {
+        // Fork hatası
+        perror("fork");
+        g_free(tab);
+        return;
+    }
+    
+    // Tüm widget'ları göster
     gtk_widget_show_all(vbox);
     
-    // Switch to the new tab
-    gint page_num = gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook)) - 1;
+    // Yeni sekmeye geç
     gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), page_num);
     
-    // Focus on entry
+    // Girişe odaklan
     gtk_widget_grab_focus(entry);
 }
 
-void append_to_terminal(const gchar *text) {
+
+void append_to_terminal(const gchar *text, gpointer user_data) {
+    TerminalTab *tab = (TerminalTab *)user_data;
     GtkTextIter iter;
-    gtk_text_buffer_get_end_iter(terminal_buffer, &iter);
-    gtk_text_buffer_insert(terminal_buffer, &iter, text, -1);
     
-    // Scroll to end
-    gtk_text_buffer_get_end_iter(terminal_buffer, &iter);
-    gtk_text_buffer_move_mark(terminal_buffer, terminal_end_mark, &iter);
-    gtk_text_view_scroll_to_mark(GTK_TEXT_VIEW(terminal_view), terminal_end_mark, 0.0, TRUE, 0.0, 1.0);
+    gtk_text_buffer_get_end_iter(tab->term_buffer, &iter);
+    gtk_text_buffer_insert(tab->term_buffer, &iter, text, -1);
+
+    gtk_text_buffer_get_end_iter(tab->term_buffer, &iter);
+    gtk_text_buffer_move_mark(tab->term_buffer, tab->term_mark, &iter);
+    gtk_text_view_scroll_to_mark(GTK_TEXT_VIEW(tab->term_view), tab->term_mark, 0.0, TRUE, 0.0, 1.0);
 }
 
+
+
 gboolean update_shared_messages(gpointer user_data) {
-    char buffer[BUF_SIZE];
+    // Aktif sekmeyi al
+    int current_page_idx = gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook));
+    if (current_page_idx >= 0) {
+        GtkWidget *current_page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), current_page_idx);
+        TerminalTab *tab = g_object_get_data(G_OBJECT(current_page), "tab-data");
+        
+        if (tab && tab->message_history) {
+            // Bu sekme için mesaj geçmişini göster
+            gtk_text_buffer_set_text(shared_buffer, tab->message_history->str, -1);
+        }
+    }
+
+    // Otomatik kaydırma için
+    GtkTextIter iter;
+    gtk_text_buffer_get_end_iter(shared_buffer, &iter);
+    GtkTextMark *mark = gtk_text_buffer_get_mark(shared_buffer, "shared-end");
+    if (!mark) {
+        mark = gtk_text_buffer_create_mark(shared_buffer, "shared-end", &iter, FALSE);
+    } else {
+        gtk_text_buffer_move_mark(shared_buffer, mark, &iter);
+    }
+    gtk_text_view_scroll_to_mark(GTK_TEXT_VIEW(shared_message_view), mark, 0.0, TRUE, 0.0, 1.0);
     
-    // Read messages from shared memory
-    module_read_messages(buffer);
-    
-    // Update shared message view
-    gtk_text_buffer_set_text(shared_buffer, buffer, -1);
-    
-    return G_SOURCE_CONTINUE;  // Continue the timeout
+    return G_SOURCE_CONTINUE;  // Zamanlayıcıya devam et
+}
+
+
+void on_tab_switched(GtkNotebook *notebook, GtkWidget *page, guint page_num, gpointer user_data) {
+    // Bu fonksiyon sekme değiştiğinde çağrılır
+    // Mesaj görünümünü yeni sekmenin geçmişiyle güncelle
+    GtkWidget *current_page = gtk_notebook_get_nth_page(notebook, page_num);
+    if (current_page) {
+        TerminalTab *tab = g_object_get_data(G_OBJECT(current_page), "tab-data");
+        if (tab && tab->message_history) {
+            // Bu sekme için mesaj geçmişini göster
+            gtk_text_buffer_set_text(shared_buffer, tab->message_history->str, -1);
+        } else {
+            // Geçmiş yoksa temizle
+            gtk_text_buffer_set_text(shared_buffer, "", -1);
+        }
+    }
 }

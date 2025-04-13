@@ -5,21 +5,33 @@ int stdout_pipe[2];
 GIOChannel *channel_out;
 
 // Controller functions
+
 void on_command_entered(GtkWidget *entry, gpointer user_data) {
     const gchar *text = gtk_entry_get_text(GTK_ENTRY(entry));
+    TerminalTab *tab = (TerminalTab *)user_data;
     
     if (strlen(text) > 0) {
         // Echo command to terminal
-        gchar *command_echo = g_strdup_printf("myshell> %s\n", text);
-        append_to_terminal(command_echo);
+        gchar *command_echo = g_strdup_printf("my_shell>> %s\n", text);
+        append_to_terminal(command_echo, user_data);
         g_free(command_echo);
         
-        // Execute the command (from original code)
-        char command_copy[MAX_CMD_LEN];
-        strncpy(command_copy, text, MAX_CMD_LEN-1);
-        command_copy[MAX_CMD_LEN-1] = '\0';
-        
-        execute_command(command_copy);
+        // Check if it's a message command
+        if (g_str_has_prefix(text, "@msg ")) {
+            // Handle as message
+            module_send_message(text + 5);  // Skip "@msg "
+            
+            // Confirm message sent
+            gchar *msg_confirm = g_strdup_printf("Mesaj gönderildi: %s\n", text + 5);
+            append_to_terminal(msg_confirm, user_data);
+            g_free(msg_confirm);
+        } else {
+
+            // Komutu çocuk sürece gönder
+            gchar *cmd = g_strdup_printf("%s\n", text);
+            write(tab->stdin_pipe[1], cmd, strlen(cmd));
+            g_free(cmd);
+        }
         
         // Clear entry
         gtk_entry_set_text(GTK_ENTRY(entry), "");
@@ -72,3 +84,39 @@ void setup_stdout_redirection() {
     // Add watch to read from pipe
     g_io_add_watch(channel_out, G_IO_IN | G_IO_HUP, read_stdout_callback, NULL);
 }
+
+
+
+
+//ekleme: controller.c dosyasına eklenecek
+gboolean read_terminal_output(GIOChannel *channel, GIOCondition condition, gpointer data) {
+    TerminalTab *tab = (TerminalTab *)data;
+    GString *str = g_string_new(NULL);
+    gsize bytes_read;
+    GIOStatus status;
+    
+    status = g_io_channel_read_line_string(channel, str, &bytes_read, NULL);
+    
+    if (status == G_IO_STATUS_NORMAL && bytes_read > 0) {
+        // Terminal buffer'a metin ekle
+        GtkTextIter iter;
+        gtk_text_buffer_get_end_iter(tab->term_buffer, &iter);
+        gtk_text_buffer_insert(tab->term_buffer, &iter, str->str, -1);
+        
+        // Sona kaydır
+        gtk_text_buffer_get_end_iter(tab->term_buffer, &iter);
+        gtk_text_buffer_move_mark(tab->term_buffer, tab->term_mark, &iter);
+        gtk_text_view_scroll_to_mark(GTK_TEXT_VIEW(tab->term_view), 
+                                   tab->term_mark, 0.0, TRUE, 0.0, 1.0);
+    }
+    
+    if (condition & G_IO_HUP) {
+        // Kanal kapandı
+        g_string_free(str, TRUE);
+        return FALSE; // İzleyiciyi kaldır
+    }
+    
+    g_string_free(str, TRUE);
+    return TRUE; // İzleyiciyi tut
+}
+

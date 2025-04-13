@@ -13,7 +13,7 @@ int main(int argc, char *argv[]) {
     create_gui();
     
     // Module başlatma mesajı
-    module_send_message("GTK Shell başlatıldı.");
+    module_send_message("\n.......GTK Shell başlatıldı........");
     
     printf("GTK Shell çalışıyor. Komutları aşağıya yazabilirsiniz.\n");
     

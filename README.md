@@ -57,11 +57,16 @@ Shells are implemented using **GTK** for the GUI, and they are capable of both e
 ```bash
 project/
 ├── controller.c    # Parses input and connects model-view
+├── controller.h 
 ├── model.c         # Backend logic for processes and message handling
+├── model.h
+├── main.c
 ├── view.c          # GTK interface implementation
+├── view.h
 ├── Makefile        # Compilation script
 ├── README.md       # Project documentation
-└── report.pdf      # Project report with design details
+└── Rapor.pdf      # Project report with design details
+
 ```
 
 ---

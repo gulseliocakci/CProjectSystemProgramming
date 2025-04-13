@@ -54,7 +54,13 @@ Shells are implemented using **GTK** for the GUI, and they are capable of both e
 
 ## 📦 File Structure
 
-. ├── model.c # Backend logic and shared memory ├── view.c # GTK-based interface ├── controller.c # Input parsing and glue logic ├── Makefile ├── README.md └── report.pdf # Detailed design and challenge discussion
+project/
+├── model.c         # Backend logic for processes and message handling
+├── view.c          # GTK interface implementation
+├── controller.c    # Parses input and connects model-view
+├── Makefile
+├── README.md
+└── report.pdf      # Design decisions and implementation report
 
 ---
 
@@ -66,6 +72,15 @@ Shells are implemented using **GTK** for the GUI, and they are capable of both e
 - `gcc`, `make`
 - GTK 3 (`libgtk-3-dev`)
 - POSIX support (for `shm_open`, `sem_t`)
+
+---
+
+## 👥 Contributors
+
+- [Amine Sayed](https://github.com/Amine86s)
+- [Gülseli Ocakcı](https://github.com/gulseliocakci)
+
+---
 
 ### Build the Project
 

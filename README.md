@@ -52,15 +52,9 @@ Shells are implemented using **GTK** for the GUI, and they are capable of both e
 
 ---
 
-## 📦 File Structure
+## 📁 File Structure
 
-project/
-├── model.c         # Backend logic for processes and message handling
-├── view.c          # GTK interface implementation
-├── controller.c    # Parses input and connects model-view
-├── Makefile
-├── README.md
-└── report.pdf      # Design decisions and implementation report
+project/ ├── controller.c # Parses input and connects model-view ├── model.c # Backend logic for processes and message handling ├── view.c # GTK interface implementation ├── Makefile # Compilation script ├── README.md # Project documentation └── report.pdf # Project report with design details
 
 ---
 
